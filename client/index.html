@@ -1,0 +1,137 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Chat example</title>
+<style>
+	.row {
+		margin: 0 auto; 
+		clear: both;
+		padding-top: 10px;
+	}
+	.col {
+		float: left;
+	}
+	.console {
+		color: rgb(88, 191, 29);
+	    background-color: black;
+	    font-family: monospace, 'Lucida Console', 'Lucida Sans Unicode', Verdana;
+	    font-size: 14px;
+	    height: 200px;
+	    overflow-y: scroll;
+	    margin: 10px 0 0 25px;
+	    width: 40%;
+	}
+	.console br {
+		display: block;
+		margin: 10px 0;
+	}
+
+    #editor { 
+        position: relative;
+        height: 200px;
+    	margin: 10px 0 0 0;
+	    width:40%;        
+    }   
+
+    .run {
+    	padding: 10px;
+    }
+</style>
+</head>
+
+<body>
+
+<form id="editorForm">
+	<div class="row"> 	
+		<div id="editor" class="col">console.log('hello world')</div>
+		<div id="console" class="col console"></div>	
+	</div>
+	<div class="row"> 
+		<input class="run" type="submit" value="run &#9654;" />
+	</div>
+</form>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.2/ace.js" type="text/javascript" charset="utf-8"></script>
+<script>
+var connection;
+var consoleContainer = document.getElementById("console");
+
+// Setup the code editor
+var editor = ace.edit("editor");
+editor.setTheme("ace/theme/monokai");
+editor.getSession().setMode("ace/mode/javascript");
+
+function onConnectionReady() {
+	console.log("Connection opened")
+	// connection.send(nickname)
+	document.getElementById("editorForm").onsubmit = onFormSubmit;
+}
+
+function onFormSubmit(event) {
+	var editorValue = editor.getValue();
+	var message = {
+		phantomCode: editorValue
+	}
+
+	if (editorValue)
+		connection.send(JSON.stringify(message));
+	
+	event.preventDefault()
+}
+
+window.addEventListener("load", function () {
+	var nickname = "justin"
+	if (nickname) {
+		connection = new WebSocket("ws://"+window.location.hostname+":3000/")
+		connection.onopen = onConnectionReady;
+
+		connection.onclose = function () {
+			console.log("Connection closed")
+		}
+		connection.onerror = function () {
+			console.error("Connection error")
+		}
+		connection.onmessage = function (event) {
+			var div = document.createElement("div");
+			var message = event.data;
+			var data;
+			try{
+				data = JSON.parse(message);
+			}
+			catch(e) 
+			{ /* Ignore for now */ } 
+			var content;
+			if(data) {
+				if(data.stdout) {
+					content = data.stdout;
+				}
+				else {
+					content = ' -- ' + message;
+				}
+			}
+			else {
+				content = ' - ' + message;
+			}
+			var contentChunks = content.split(/(?:\r\n|\r|\n)/g);
+
+			contentChunks.forEach(function(line) {
+				var lineElement = document.createElement("div");
+				lineElement.textContent = line;
+				div.appendChild(lineElement);
+			});
+
+			// Add a little break
+			var breakElement = document.createElement("div");
+				breakElement.textContent = ' ';
+				div.appendChild(breakElement);
+			consoleContainer.appendChild(div);
+
+			// Move to the bottom of the console
+			consoleContainer.scrollTop = consoleContainer.scrollHeight;
+		}
+	}
+})
+</script>
+</body>
+</html>

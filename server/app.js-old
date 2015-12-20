@@ -1,0 +1,9 @@
+var http = require("http")
+
+var fs = require("fs")
+
+// Application Server
+http.createServer('/', function (req, res) {
+	console.log("page requested", req.url);
+	fs.createReadStream("./client/index.html").pipe(res)	
+}).listen(3000);
