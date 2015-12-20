@@ -6,6 +6,8 @@ var express = require('express');
 var app = express();
 var port = 3000;
 var fs = require('fs');
+var isWin = /^win/.test(process.platform);
+var path = require('path');
 
 app.use(express.static('client'));
 
@@ -47,9 +49,7 @@ function executePhantom(ws, message, onComplete) {
       if (err) throw err;
       console.log('It\'s saved!');
 
-      // Execute phantom
-      var phantomCommand = "phantomjs " + PHANTOM_FILE;
-      spawn(ws, phantomCommand)
+      spawnPhantom(ws, PHANTOM_FILE)
     });
   }
 }
@@ -59,11 +59,23 @@ function onPhantomComplete() {
 }
 
 // launch a basic shell command
-function spawn(ws, command) {
+function spawnPhantom(ws, file) {
   if(!ws.hasSpawnProcess) {
       var spawn = require('child_process').spawn;
       // for linxu - var terminal = require('child_process').spawn('bash');
-      var child = spawn('cmd', ['/c', command])
+
+    // Execute phantom
+
+
+      if(isWin) {
+        var phantomCommand = "phantomjs " + file;
+        var child = spawn('cmd', ['/c', phantomCommand])
+      }
+      else {
+        console.log('---->linux')
+        var filePath = path.join(__dirname, '../', file);
+        var child = spawn('phantomjs', [filePath])
+      }
 
       child.stdout.on('data', function(data) {
           var message = {
