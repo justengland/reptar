@@ -8,6 +8,10 @@ var port = 3000;
 var fs = require('fs');
 var isWin = /^win/.test(process.platform);
 var path = require('path');
+var shortid = require('shortid');
+var output = require('./output.js');
+var hound = require('hound');
+
 
 app.use(express.static('client'));
 
@@ -18,6 +22,10 @@ app.use(function (req, res) {
 wss.on('connection', function connection(ws) {    
   var location = url.parse(ws.upgradeReq.url, true);
   console.log('location:', location);
+
+  var sessionId = shortid.generate();
+  console.log(sessionId);
+
   // you might use location.query.access_token to authenticate or share sessions
   // or ws.upgradeReq.headers.cookie (see http://stackoverflow.com/a/16395220/151312)
 
@@ -31,26 +39,56 @@ wss.on('connection', function connection(ws) {
     ws.send(obj.msg);
 
     // Handle Messages - this is really like a middleware, if you want to subscribe to the 
-    executePhantom(ws, obj, onPhantomComplete);
+    executePhantom(ws, obj, sessionId, onPhantomComplete);
 
-    // spawn(ws, obj.msg);
   });
 
-  sendJSON(ws, { stdout: 'server connected' });
+  sendJSONToConsole(ws, { stdout: 'server connected' });
 });
 
-function executePhantom(ws, message, onComplete) {
-  if(ws && message && message.phantomCode && onComplete) { 
-    console.log('executePhantom called')   
-    var phantomCode = message.phantomCode;
-    var PHANTOM_FILE = 'code.phantom.js';
-    // Write Code to file
-    fs.writeFile(PHANTOM_FILE, phantomCode, function (err) {
-      if (err) throw err;
-      console.log('It\'s saved!');
+function executePhantom(ws, message, sessionId, onComplete) {
 
-      spawnPhantom(ws, PHANTOM_FILE)
+  function onFileSaved(dir, fileName) {
+    console.log('It\'s saved!');
+
+    var watcher = hound.watch(dir);
+    watcher.on('create', function(file, stats) {
+      var message = {
+        fileMode: 'create',
+        file: file,
+        size: stats.size,
+        mtime: stats.mtime
+      };
+      sendJSONInfo(ws, message);
+      console.log('create', file, stats);
     });
+    watcher.on('change', function(file, stats) {
+      var message = {
+        fileMode: 'change',
+        file: file,
+        size: stats.size,
+        mtime: stats.mtime
+      };
+      sendJSONInfo(ws, message);
+      console.log('change', file, stats);
+    });
+    watcher.on('delete', function(file) {
+      var message = {
+        fileMode: 'delete',
+        file: file,
+      }
+      sendJSONInfo(ws, message);
+      console.log('delete', file)
+    });
+
+    spawnPhantom(ws, dir, fileName);
+  }
+
+  if(ws && message && message.phantomCode && onComplete) { 
+    console.log('executePhantom called');
+    var phantomCode = message.phantomCode;
+
+    output.saveCodeFile(sessionId, phantomCode, onFileSaved);
   }
 }
 
@@ -59,22 +97,20 @@ function onPhantomComplete() {
 }
 
 // launch a basic shell command
-function spawnPhantom(ws, file) {
+function spawnPhantom(ws, dir, file) {
   if(!ws.hasSpawnProcess) {
       var spawn = require('child_process').spawn;
       // for linxu - var terminal = require('child_process').spawn('bash');
 
-    // Execute phantom
-
-
+      // Execute phantom
       if(isWin) {
         var phantomCommand = "phantomjs " + file;
-        var child = spawn('cmd', ['/c', phantomCommand])
+        var child = spawn('cmd', ['/c', phantomCommand], {cwd: dir});
       }
       else {
         console.log('---->linux')
         var filePath = path.join(__dirname, '../', file);
-        var child = spawn('phantomjs', [filePath])
+        var child = spawn('phantomjs', [filePath], {cwd: dir})
       }
 
       child.stdout.on('data', function(data) {
@@ -82,7 +118,7 @@ function spawnPhantom(ws, file) {
             stdout: data.toString()
           }
           console.log('stdout: ' + data);
-          sendJSON(ws, message);
+          sendJSONToConsole(ws, message);
           //Here is where the output goes
       });
       
@@ -91,7 +127,7 @@ function spawnPhantom(ws, file) {
             stdout: "ERROR: " + data
           }
           console.log('stderr: ' + data);
-          sendJSON(ws, message);
+          sendJSONToConsole(ws, message);
       });
       
       child.on('close', function(code) {
@@ -99,7 +135,7 @@ function spawnPhantom(ws, file) {
           var message = {
             stdout: "Closed: " + code
           }
-          sendJSON(ws, message);
+          sendJSONToConsole(ws, message);
       });
   }
   else {
@@ -108,9 +144,16 @@ function spawnPhantom(ws, file) {
 
 }
 
-function sendJSON(ws, message) {
+function sendJSONToConsole(ws, message) {
+    message.console = true;
     var serilizedMessage = JSON.stringify(message);
     ws.send(serilizedMessage);
+}
+
+function sendJSONInfo(ws, message) {
+  message.console = false;
+  var serilizedMessage = JSON.stringify(message);
+  ws.send(serilizedMessage);
 }
 
 server.on('request', app);

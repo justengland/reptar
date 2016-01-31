@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Chat example</title>
+<title>Phantom repl</title>
 <style>
 	.row {
 		margin: 0 auto; 
@@ -27,7 +27,7 @@
 		margin: 10px 0;
 	}
 
-    #editor { 
+    .editor {
         position: relative;
         height: 200px;
     	margin: 10px 0 0 0;
@@ -42,30 +42,49 @@
 
 <body>
 
-<form id="editorForm">
+<form class="editorForm">
 	<div class="row"> 	
-		<div id="editor" class="col">console.log('hello world')</div>
-		<div id="console" class="col console"></div>	
+		<div class="col editor">function closeWhenFinished() {
+	page.isFinished && page2.isFinished && phantom.exit();
+}
+
+var page = require('webpage').create();
+page.open('http://google.com/', function() {
+	console.log('download a google');
+	page.render('google.png');
+	page.isFinished = true;
+	closeWhenFinished();
+});
+
+var page2 = require('webpage').create();
+page2.open('http://google.com/', function() {
+	console.log('download a google2');
+	page2.render('google2.png');
+	closeWhenFinished();
+});</div>
+		<div class="col console"></div>
 	</div>
 	<div class="row"> 
 		<input class="run" type="submit" value="run &#9654;" />
+		<input class="clear" type="button" value="clear" />
 	</div>
+
+	<div class="row files"></div>
 </form>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.2/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>
 var connection;
-var consoleContainer = document.getElementById("console");
+var consoleContainer = document.querySelector(".console");
+var filesContainer = document.querySelector(".files");
+var editForm = document.querySelector(".editorForm");
+var editorElement = document.querySelector(".editor");
+var clearButton = document.querySelector(".clear");
 
-// Setup the code editor
-var editor = ace.edit("editor");
-editor.setTheme("ace/theme/monokai");
-editor.getSession().setMode("ace/mode/javascript");
 
 function onConnectionReady() {
 	console.log("Connection opened")
-	// connection.send(nickname)
-	document.getElementById("editorForm").onsubmit = onFormSubmit;
+	editForm.onsubmit = onFormSubmit;
 }
 
 function onFormSubmit(event) {
@@ -80,7 +99,55 @@ function onFormSubmit(event) {
 	event.preventDefault()
 }
 
-window.addEventListener("load", function () {
+function onClearClick() {
+	consoleContainer.innerHTML = '';
+}
+
+function writeMessageToConsole(data){
+	var content;
+	if(data) {
+		if(data.stdout) {
+			content = data.stdout;
+		}
+		else {
+			content = ' -- ' + message;
+		}
+	}
+	else {
+		content = ' - ' + message;
+	}
+
+	var contentContainer = document.createElement("div");
+	var contentChunks = content.split(/(?:\r\n|\r|\n)/g);
+
+	contentChunks.forEach(function(line) {
+		var lineElement = document.createElement("div");
+		lineElement.textContent = line;
+		contentContainer.appendChild(lineElement);
+	});
+
+	// Add a little break
+	var breakElement = document.createElement("div");
+	breakElement.textContent = ' ';
+	contentContainer.appendChild(breakElement);
+	consoleContainer.appendChild(contentContainer);
+
+	// Move to the bottom of the console
+	consoleContainer.scrollTop = consoleContainer.scrollHeight;
+}
+
+function writeFileMessage(data) {
+	var selector = '[data-file="' + data.file + '"]';
+	var foundFileContainer = filesContainer.querySelector(selector);
+	var fileContainer = foundFileContainer || document.createElement("div");
+
+	fileContainer.innerText = data.fileMode + ': ' + data.file + ' - ' + data.size;
+	fileContainer.setAttribute('data-file', data.file);
+
+	!foundFileContainer && filesContainer.appendChild(fileContainer);
+}
+
+function onLoad() {
 	var nickname = "justin"
 	if (nickname) {
 		connection = new WebSocket("ws://"+window.location.hostname+":3000/")
@@ -93,45 +160,35 @@ window.addEventListener("load", function () {
 			console.error("Connection error")
 		}
 		connection.onmessage = function (event) {
-			var div = document.createElement("div");
 			var message = event.data;
 			var data;
 			try{
 				data = JSON.parse(message);
 			}
-			catch(e) 
-			{ /* Ignore for now */ } 
+			catch(e)
+			{
+				// Ignore for now
+			}
 			var content;
-			if(data) {
-				if(data.stdout) {
-					content = data.stdout;
-				}
-				else {
-					content = ' -- ' + message;
-				}
+			if(data && data.console) {
+				writeMessageToConsole(data);
 			}
-			else {
-				content = ' - ' + message;
+			else if(data) {
+				writeFileMessage(data);
+				console.log('info message:', data);
 			}
-			var contentChunks = content.split(/(?:\r\n|\r|\n)/g);
-
-			contentChunks.forEach(function(line) {
-				var lineElement = document.createElement("div");
-				lineElement.textContent = line;
-				div.appendChild(lineElement);
-			});
-
-			// Add a little break
-			var breakElement = document.createElement("div");
-				breakElement.textContent = ' ';
-				div.appendChild(breakElement);
-			consoleContainer.appendChild(div);
-
-			// Move to the bottom of the console
-			consoleContainer.scrollTop = consoleContainer.scrollHeight;
 		}
 	}
-})
+}
+
+// Wire up stuff
+clearButton.onclick = onClearClick;
+window.addEventListener("load", onLoad);
+
+// Setup the code editor
+var editor = ace.edit(editorElement);
+editor.setTheme("ace/theme/monokai");
+editor.getSession().setMode("ace/mode/javascript");
 </script>
 </body>
 </html>
